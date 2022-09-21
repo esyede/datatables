@@ -24,25 +24,23 @@ class Datatables
     protected $removed = [];
     protected $edited = [];
     protected $filterings = [];
-    protected $sColumns = [];
     protected $collections;
     protected $records = [];
     protected $data = [];
     protected $input = [];
-    protected $mDataSupport;
-    protected $colums_data_support;
+    protected $use_column_data;
     protected $index;
     protected $row_classes;
     protected $row_data = [];
     protected $total = 0;
     protected $filtered = 0;
 
-    public static function of($query, $colums_data_support = false)
+    public static function of($query, $use_column_data = false)
     {
         $instance = new static();
-        $instance->colums_data_support = $colums_data_support
-            ? $colums_data_support
-            : Config::get('datatables::main.colums_data_support', false);
+        $instance->use_column_data = $use_column_data
+            ? $use_column_data
+            : Config::get('datatables::main.use_column_data', false);
         $instance->process($query);
 
         return $instance;
@@ -50,9 +48,7 @@ class Datatables
 
     public function add($name, \Closure $content, $order = false)
     {
-        $this->sColumns[] = $name;
         $this->added[] = compact('name', 'content', 'order');
-
         return $this;
     }
 
@@ -97,9 +93,8 @@ class Datatables
         return $this;
     }
 
-    public function make($mDataSupport = false, $raw = false)
+    public function make($raw = false)
     {
-        $this->mDataSupport = $mDataSupport;
         $this->ordered();
         $this->prepares();
         $this->results();
@@ -121,7 +116,7 @@ class Datatables
             }, $this->collections);
         }
 
-        if ($this->colums_data_support) {
+        if ($this->use_column_data) {
             $walk = function ($value, $key, $prefix = null) use (&$walk, &$records) {
                 $key = is_null($prefix) ? $key : $prefix.'.'.$key;
 
@@ -153,7 +148,7 @@ class Datatables
         $this->driver = ($query instanceof Model) ? 'facile' : 'magic';
         $connection = Config::get('database.default');
 
-        if ($this->colums_data_support) {
+        if ($this->use_column_data) {
             if ($this->driver === 'facile') {
                 $this->columns = array_map(function ($column) {
                     return trim(Database::connection($connection)->pdo()->quote($column['data']), "'");
@@ -177,7 +172,7 @@ class Datatables
             foreach ($this->added as $key => $value) {
                 $value['content'] = $this->content($value['content'], $data, $this->collections[$name]);
 
-                if ($this->colums_data_support) {
+                if ($this->use_column_data) {
                     Arr::set($data, $value['name'], $value['content']);
                 } else {
                     $data = $this->includes($value, $data);
@@ -187,7 +182,7 @@ class Datatables
             foreach ($this->edited as $key => $value) {
                 $value['content'] = $this->content($value['content'], $data, $this->collections[$name]);
 
-                if ($this->colums_data_support) {
+                if ($this->use_column_data) {
                     Arr::set($data, $value['name'], $value['content']);
                 } else {
                     $data[$value['name']] = $value['content'];
@@ -200,14 +195,14 @@ class Datatables
     {
         foreach ($this->records as $key => $value) {
             foreach ($this->removed as $column) {
-                if ($this->colums_data_support) {
+                if ($this->use_column_data) {
                     Arr::forget($value, $column);
                 } else {
                     unset($value[$column]);
                 }
             }
 
-            $row = ($this->mDataSupport || $this->colums_data_support) ? $value : array_values($value);
+            $row = $this->use_column_data ? $value : array_values($value);
 
             if ($this->index !== null) {
                 $row['DT_RowId'] = array_key_exists($this->index, $value)
@@ -368,7 +363,7 @@ class Datatables
 
         $columns = array_values($columns);
         $names = $this->cleans($columns, false);
-        $aliases = $this->cleans($columns, ! $this->colums_data_support);
+        $aliases = $this->cleans($columns, ! $this->use_column_data);
         $keyword = (string) Input::get('search.value', '');
         $total = count((array) Input::get('columns', []));
 

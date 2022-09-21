@@ -35,5 +35,5 @@ return [
     |
     */
 
-    'colums_data_support' => false,
+    'use_column_data' => false,
 ];
