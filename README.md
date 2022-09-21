@@ -220,7 +220,7 @@ $('#table').dataTable({
 });
 
 // Controller
-$users = User::join('profile');
+$users = User::join('profile', 'profiles.user_id', '=', 'user.id');
 
 return Datatables::of($users)
     ->filter('profile.last_name', 'where', DB::raw('CONCAT(profile.last_name, " ",profile.first_name)'), 'LIKE', '$1')
@@ -239,4 +239,4 @@ return Datatables::of($users)
 
 ## Lisensi
 
-Paket ini dirilis dibawah [Lisensi MIT](https://github.com/esyede/datatables/datatables/master/LICENSE)
+Paket ini dirilis dibawah [Lisensi MIT](https://github.com/esyede/datatables/master/LICENSE)
