@@ -184,7 +184,7 @@ return Datatables::of($posts)
 Referensi API: https://datatables.net/manual/server-side#Returned-data
 
 
-**Contoh 5: Penggunaan `column.data`**
+**Contoh 5: Penggunaan `columns.data`**
 
 Jika perlu memanfaatkan fitur `column.data` bawaan dataTables,
 anda dapat mengaktifkan konfigurasi `use_colums_data` atau mengoper `TRUE`
