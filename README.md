@@ -184,10 +184,10 @@ return Datatables::of($posts)
 Referensi API: https://datatables.net/manual/server-side#Returned-data
 
 
-**Contoh 5: Penggunaan `dataFullSupport`**
+**Contoh 5: Penggunaan `column.data`**
 
 Jika perlu memanfaatkan fitur `column.data` bawaan dataTables,
-anda dapat mengaktifkan konfigurasi `dataFullSupport` atau mengoper `TRUE`
+anda dapat mengaktifkan konfigurasi `use_colums_data` atau mengoper `TRUE`
 ke parameter ke-dua saat inisialisasi data seperti ini:
 
 ```php
@@ -234,6 +234,8 @@ return Datatables::of($users)
     ->forget('profile.photo_id')
     ->make();
 ```
+
+Referensi: https://datatables.net/reference/option/columns.data
 
 
 
