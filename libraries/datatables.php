@@ -544,7 +544,7 @@ class Datatables
 
         $cloned->orderings = null;
 
-        if (! $type === 'total' || $type === 'filtered') {
+        if ($type === 'total' || $type === 'filtered') {
             $bindings = array_map(function ($binding) {
                 return Database::escape($binding);
             }, $cloned->bindings);
