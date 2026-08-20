@@ -118,7 +118,7 @@ class Datatables
 
         if ($this->use_column_data) {
             $walk = function ($value, $key, $prefix = null) use (&$walk, &$records) {
-                $key = is_null($prefix) ? $key : $prefix.'.'.$key;
+                $key = is_null($prefix) ? $key : $prefix . '.' . $key;
 
                 if (is_array($value)) {
                     array_walk($value, $walk, $key);
@@ -150,7 +150,7 @@ class Datatables
 
         if ($this->use_column_data) {
             if ($this->driver === 'facile') {
-                $this->columns = array_map(function ($column) {
+                $this->columns = array_map(function ($column) use ($connection) {
                     return trim(Database::connection($connection)->pdo()->quote($column['data']), "'");
                 }, Input::get('columns', []));
             } else {
@@ -327,11 +327,11 @@ class Datatables
             $columns = $this->cleans($this->ordered);
 
             for ($i = 0; $i < $length; $i++) {
-                $order = (int) Input::get('order.'.$i.'.column', 0);
+                $order = (int) Input::get('order.' . $i . '.column', 0);
 
                 if (isset($columns[$order])) {
-                    if ((string) Input::get('columns.'.$order.'.orderable') === 'true') {
-                        $this->query->order_by($columns[$order], Input::get('order.'.$i.'.dir', 'asc'));
+                    if ((string) Input::get('columns.' . $order . '.orderable') === 'true') {
+                        $this->query->order_by($columns[$order], Input::get('order.' . $i . '.dir', 'asc'));
                     }
                 }
             }
@@ -371,14 +371,16 @@ class Datatables
             $self = $this;
             $this->query->where(function ($query) use (&$self, $aliases, $names, $keyword, $total) {
                 for ($i = 0; $i < $total; $i++) {
-                    if (isset($aliases[$i]) && (string) Input::get('columns.'.$i.'.searchable') === 'true') {
+                    if (isset($aliases[$i]) && (string) Input::get('columns.' . $i . '.searchable') === 'true') {
                         if (isset($self->filterings[$aliases[$i]])) {
                             $filter = $self->filterings[$aliases[$i]];
-                            $method = 'or_'.ucfirst($filter['method']);
-                            $class = ($self->driver === 'facile') ? $query->query() : $query->query;
+                            $method = 'or_' . $filter['method'];
+                            $class = $query;
 
-                            if (method_exists($class, $method)
-                            && count($filter['parameters']) <= count((new \ReflectionMethod($class, $method))->bindings)) {
+                            if (
+                                method_exists($class, $method)
+                                && count($filter['parameters']) <= (new \ReflectionMethod($class, $method))->getNumberOfParameters()
+                            ) {
                                 if (isset($filter['parameters'][1]) && Str::upper(trim($filter['parameters'][1])) === 'LIKE') {
                                     $keyword = $self->keyword($keyword);
                                 }
@@ -398,9 +400,9 @@ class Datatables
                             $column = $this->name($names[$i]);
 
                             if (Config::get('datatables::main.case_insensitive', false)) {
-                                $query->or_where(Database::raw('LOWER('.$begin.$column.$end.')'), 'LIKE', Str::lower($keyword));
+                                $query->or_where(Database::raw('LOWER(' . $begin . $column . $end . ')'), 'LIKE', Str::lower($keyword));
                             } else {
-                                $query->or_where(Database::raw($begin.$column.$end), 'LIKE', $keyword);
+                                $query->or_where(Database::raw($begin . $column . $end), 'LIKE', $keyword);
                             }
                         }
                     }
@@ -409,12 +411,14 @@ class Datatables
         }
 
         for ($i = 0; $i < $total; $i++) {
-            if (isset($aliases[$i])
-            && (string) Input::get('columns.'.$i.'.searchable') === 'true'
-            && (string) Input::get('columns.'.$i.'.search.value') !== '') {
+            if (
+                isset($aliases[$i])
+                && (string) Input::get('columns.' . $i . '.searchable') === 'true'
+                && (string) Input::get('columns.' . $i . '.search.value') !== ''
+            ) {
                 if (isset($this->filterings[$aliases[$i]])) {
                     $filter = $this->filterings[$aliases[$i]];
-                    $keyword = Input::get('columns.'.$i.'.search.value');
+                    $keyword = Input::get('columns.' . $i . '.search.value');
 
                     if (isset($filter['parameters'][1]) && Str::upper(trim($filter['parameters'][1])) === 'LIKE') {
                         $keyword = $this->keyword($keyword);
@@ -422,11 +426,11 @@ class Datatables
 
                     call_user_func_array([$this->query, $filter['method']], $this->inject($filter['parameters'], $keyword));
                 } else {
-                    $keyword = $this->keyword(Input::get('columns.'.$i.'.search.value'));
+                    $keyword = $this->keyword(Input::get('columns.' . $i . '.search.value'));
                     $column = $this->name($names[$i]);
 
                     if (Config::get('datatables::main.case_insensitive', false)) {
-                        $this->query->where(Database::raw('LOWER('.$column.')'), 'LIKE', Str::lower($keyword));
+                        $this->query->where(Database::raw('LOWER(' . $column . ')'), 'LIKE', Str::lower($keyword));
                     } else {
                         $column = strstr($names[$i], '(') ? Database::raw($column) : $column;
                         $this->query->where($column, 'LIKE', $keyword);
@@ -443,30 +447,30 @@ class Datatables
         }
 
         if (Config::get('datatables::main.use_wildcards', false)) {
-            return '%'.$this->wildcard($value).'%';
+            return '%' . $this->wildcard($value) . '%';
         }
 
-        return '%'.trim($value).'%';
+        return '%' . trim($value) . '%';
     }
 
     public function wildcard($keyword, $lowercase = true)
     {
-        return preg_replace('\s+', '%', $lowercase ? Str::lower($keyword) : $keyword);
+        return preg_replace('/\s+/', '%', $lowercase ? Str::lower($keyword) : $keyword);
     }
 
     public function prefix()
     {
-        return Config::get('database.connections.'.Config::get('database.default').'.prefix', '');
+        return Config::get('database.connections.' . Config::get('database.default') . '.prefix', '');
     }
 
     protected function name($column)
     {
         $tables = $this->tables();
         $prefix = array_filter($tables, function ($value) use (&$column) {
-            return mb_strpos($column, $value.'.') === 0;
+            return mb_strpos($column, $value . '.') === 0;
         });
 
-        return (count($prefix) > 0) ? $this->prefix().$column : $column;
+        return (count($prefix) > 0) ? $this->prefix() . $column : $column;
     }
 
     protected function tables()
@@ -483,7 +487,7 @@ class Datatables
             $names[] = $table[0];
 
             if (isset($table[1]) && $prefix && mb_strpos($table[1], $prefix) === 0) {
-                $names[] = preg_replace('/^'.$prefix.'/', '', $table[1]);
+                $names[] = preg_replace('/^' . $prefix . '/', '', $table[1]);
             }
         }
 
@@ -509,7 +513,7 @@ class Datatables
         $cloned = clone $this->query;
 
         if (! preg_match('/UNION/i', $cloned->to_sql())) {
-            $cloned->select(Database::raw("'1' as row"));
+            $cloned->select(Database::raw('1 as counter'));
 
             if ($cloned->havings) {
                 foreach ($cloned->havings as $having) {
@@ -548,7 +552,7 @@ class Datatables
             $bindings = array_map(function ($binding) {
                 return Database::escape($binding);
             }, $cloned->bindings);
-            $sql = Str::replace_array('?', $bindings, '('.$cloned->to_sql().') AS count_row_table');
+            $sql = Str::replace_array('?', $bindings, '(' . $cloned->to_sql() . ') AS count_row_table');
             $this->{$type} = $this->query->connection->table(Database::raw($sql))->count();
         }
     }
