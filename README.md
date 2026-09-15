@@ -142,7 +142,7 @@ return Datatables::of($posts)
 **Contoh 3: Filter kolom**
 
 ```php
-$clients = client::select([
+$clients = Client::select([
         'client.id',
         'fullname',
         'client.email',
@@ -160,10 +160,18 @@ return Datatables::of($clients)
         return explode(',', $value);
     })
     ->filter('updated_at', 'where_between', 'client.updated_at', function ($value) {
-        return explode(',', $value);
-    }, 'and')
+        $range = explode(',', $value);
+        return $range[0];
+    }, function ($value) {
+        $range = explode(',', $value);
+        return isset($range[1]) ? $range[1] : $range[0];
+    })
     ->make();
 ```
+
+Setiap `$1` diganti dengan kata kunci yang dikirim DataTables. Di dalam `DB::raw()`, kata kunci tersebut
+otomatis di-quote sehingga aman dari SQL injection, contohnya `UPPER($1)` menjadi `UPPER('kata kunci')`.
+Filter berupa closure menerima kata kunci tersebut sebagai parameter.
 
 **Contoh 4: Penggunaan `DT_RowID`, `DT_RowClass` dan `DT_RowData`**
 
@@ -172,11 +180,11 @@ $posts = Post::select(['id', 'name', 'created_at', 'status']);
 
 return Datatables::of($posts)
     ->index('id')
-    ->row_class('status', function ($item) {
+    ->row_class(function ($item) {
         return ($item->status === 'published') ? 'badge-success' : 'badge-warning';
     })
     ->row_data('created_at', function ($item) {
-        return Date::make($item->created_at)->format('c');
+        return Carbon::parse($item->created_at)->format('c');
     })
     ->make();
 ```
@@ -222,14 +230,14 @@ $('#table').dataTable({
 // Controller
 $users = User::join('profile', 'profiles.user_id', '=', 'user.id');
 
-return Datatables::of($users)
+return Datatables::of($users, true)
     ->filter('profile.last_name', 'where', DB::raw('CONCAT(profile.last_name, " ",profile.first_name)'), 'LIKE', '$1')
     ->filter('created_at', 'where', 'users.created_at', 'LIKE', '$1')
     ->edit('created_at', function ($item) {
-        return Date::make($item->created_at)->format('d M Y, h:i');
+        return Carbon::parse($item->created_at)->format('d M Y, h:i');
     })
     ->add('actions', function ($item) {
-        return '<a href="'.url('user/edit/'.$iitem->id).'" >Edit</a>';
+        return '<a href="'.url('user/edit/'.$item->id).'" >Edit</a>';
     }, 3)
     ->forget('profile.photo_id')
     ->make();

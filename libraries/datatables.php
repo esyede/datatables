@@ -12,6 +12,7 @@ use System\Database;
 use System\Response;
 use System\Database\Expression;
 use System\Database\Facile\Model;
+use System\Database\Facile\Query as FacileQuery;
 
 class Datatables
 {
@@ -81,9 +82,10 @@ class Datatables
         return $this;
     }
 
-    public function row_class($css_class)
+    public function row_class($css_class, $content = null)
     {
-        $this->row_classes = $css_class;
+        // The older row_class('column', function () {}) form is still accepted.
+        $this->row_classes = is_null($content) ? $css_class : $content;
         return $this;
     }
 
@@ -106,11 +108,15 @@ class Datatables
 
     protected function results()
     {
+        // Both builders return a collection, the rows are kept as a plain array.
+        $results = $this->query->get();
+        $this->collections = ($results instanceof \System\Collection) ? $results->all() : (array) $results;
+
         if ($this->driver === 'facile') {
-            $this->collections = $this->query->get();
-            $this->records = $this->collections->to_array();
+            $this->records = array_map(function ($model) {
+                return $model->to_array();
+            }, $this->collections);
         } else {
-            $this->collections = $this->query->get();
             $this->records = array_map(function ($object) {
                 return (array) $object;
             }, $this->collections);
@@ -144,26 +150,32 @@ class Datatables
 
     protected function process($query)
     {
-        $this->query = $query;
-        $this->driver = ($query instanceof Model) ? 'facile' : 'magic';
-        $connection = Config::get('database.default');
+        // A model instance is turned into its query, e.g. Datatables::of(new Post()).
+        $query = ($query instanceof Model) ? $query->query() : $query;
 
-        if ($this->use_column_data) {
-            if ($this->driver === 'facile') {
-                $this->columns = array_map(function ($column) use ($connection) {
-                    return trim(Database::connection($connection)->pdo()->quote($column['data']), "'");
-                }, Input::get('columns', []));
-            } else {
-                $this->columns = ($this->driver === 'facile')
-                    ? $this->query->table->selects
-                    : $this->query->selects;
-                $this->columns = Arr::wrap($this->columns);
-            }
+        $this->query = $query;
+        $this->driver = ($query instanceof FacileQuery) ? 'facile' : 'magic';
+
+        if ($this->use_column_data && $this->driver === 'facile') {
+            $connection = $this->builder()->connection;
+            $this->columns = array_map(function ($column) use ($connection) {
+                return trim($connection->pdo()->quote(isset($column['data']) ? (string) $column['data'] : ''), "'");
+            }, (array) Input::get('columns', []));
         } else {
-            $this->columns = ($this->driver === 'facile')
-                ? $this->query->table->selects
-                : $this->query->selects;
+            $this->columns = array_map(function ($column) {
+                return (string) $column;
+            }, Arr::wrap($this->builder()->selects));
         }
+    }
+
+    /**
+     * Get the query builder underneath, which is wrapped by a facile query.
+     *
+     * @return \System\Database\Query
+     */
+    protected function builder()
+    {
+        return ($this->driver === 'facile') ? $this->query->table : $this->query;
     }
 
     protected function modify()
@@ -233,8 +245,11 @@ class Datatables
                 $parameters[$key] = $this->inject($param, $value);
             }
         } elseif ($parameters instanceof Expression) {
-            $parameters = Database::raw(str_replace('$1', $value, $parameters));
-        } elseif (is_callable($parameters)) {
+            // The value comes from the client, it goes into the raw sql quoted.
+            $quoted = $this->builder()->connection->pdo()->quote((string) $value);
+            $parameters = Database::raw(str_replace('$1', $quoted, $parameters->get()));
+        } elseif ($parameters instanceof \Closure) {
+            // Only a closure is called, a string such as 'date' is a column, not a function.
             $parameters = $parameters($value);
         } elseif (is_string($parameters)) {
             $parameters = str_replace('$1', $value, $parameters);
@@ -331,7 +346,10 @@ class Datatables
 
                 if (isset($columns[$order])) {
                     if ((string) Input::get('columns.' . $order . '.orderable') === 'true') {
-                        $this->query->order_by($columns[$order], Input::get('order.' . $i . '.dir', 'asc'));
+                        // The direction comes from the client, anything unexpected falls back to asc.
+                        $direction = strtolower((string) Input::get('order.' . $i . '.dir', 'asc'));
+                        $direction = ('desc' === $direction) ? 'desc' : 'asc';
+                        $this->query->order_by($columns[$order], $direction);
                     }
                 }
             }
@@ -381,7 +399,7 @@ class Datatables
                                 method_exists($class, $method)
                                 && count($filter['parameters']) <= (new \ReflectionMethod($class, $method))->getNumberOfParameters()
                             ) {
-                                if (isset($filter['parameters'][1]) && Str::upper(trim($filter['parameters'][1])) === 'LIKE') {
+                                if ($self->likes($filter)) {
                                     $keyword = $self->keyword($keyword);
                                 }
 
@@ -392,7 +410,7 @@ class Datatables
                             $begin = null;
                             $end = null;
 
-                            if (Config::get('database.default') === 'pgsql') {
+                            if ($self->builder()->connection->driver() === 'pgsql') {
                                 $begin = 'CAST(';
                                 $end = ' as TEXT)';
                             }
@@ -420,7 +438,7 @@ class Datatables
                     $filter = $this->filterings[$aliases[$i]];
                     $keyword = Input::get('columns.' . $i . '.search.value');
 
-                    if (isset($filter['parameters'][1]) && Str::upper(trim($filter['parameters'][1])) === 'LIKE') {
+                    if ($this->likes($filter)) {
                         $keyword = $this->keyword($keyword);
                     }
 
@@ -438,6 +456,21 @@ class Datatables
                 }
             }
         }
+    }
+
+    /**
+     * Check whether a custom filter compares with LIKE.
+     * Its second parameter is not always an operator, where_between() takes a value there.
+     *
+     * @param array $filter
+     *
+     * @return bool
+     */
+    protected function likes(array $filter)
+    {
+        return isset($filter['parameters'][1])
+            && is_string($filter['parameters'][1])
+            && 'LIKE' === Str::upper(trim($filter['parameters'][1]));
     }
 
     public function keyword($value)
@@ -460,7 +493,8 @@ class Datatables
 
     public function prefix()
     {
-        return Config::get('database.connections.' . Config::get('database.default') . '.prefix', '');
+        $config = $this->builder()->connection->config;
+        return isset($config['prefix']) ? (string) $config['prefix'] : '';
     }
 
     protected function name($column)
@@ -476,7 +510,7 @@ class Datatables
     protected function tables()
     {
         $names = [];
-        $query = ($this->driver === 'facile') ? $this->query->query() : $this->query;
+        $query = $this->builder();
 
         $names[] = $query->from;
         $joins = $query->joins ? $query->joins : [];
@@ -510,7 +544,8 @@ class Datatables
 
     protected function counts($type = 'total')
     {
-        $cloned = clone $this->query;
+        // A copy of the builder itself, cloning a facile query would share its builder.
+        $cloned = $this->builder()->copy();
 
         if (! preg_match('/UNION/i', $cloned->to_sql())) {
             $cloned->select(Database::raw('1 as counter'));
@@ -533,7 +568,7 @@ class Datatables
                             foreach ($this->columns as $col) {
                                 $names = preg_split('/ as /i', $col);
 
-                                if (isset($columns[1]) && $names[1] === $found) {
+                                if (isset($names[1]) && $names[1] === $found) {
                                     $found = $names[0];
                                     break;
                                 }
@@ -549,11 +584,9 @@ class Datatables
         $cloned->orderings = null;
 
         if ($type === 'total' || $type === 'filtered') {
-            $bindings = array_map(function ($binding) {
-                return Database::escape($binding);
-            }, $cloned->bindings);
-            $sql = Str::replace_array('?', $bindings, '(' . $cloned->to_sql() . ') AS count_row_table');
-            $this->{$type} = $this->query->connection->table(Database::raw($sql))->count();
+            // The bindings stay bound instead of being quoted into the sql.
+            $sql = 'SELECT COUNT(*) AS aggregate FROM (' . $cloned->to_sql() . ') count_row_table';
+            $this->{$type} = (int) $cloned->connection->only($sql, $cloned->bindings);
         }
     }
 
